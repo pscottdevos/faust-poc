@@ -1,0 +1,4 @@
+ipython
+pydot
+pynput
+-e git+https://github.com/pscottdevos/faust.git@1.10#egg=faust
