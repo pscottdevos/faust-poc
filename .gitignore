@@ -1,3 +1,4 @@
 *.tar.gz
 src/
 __pycache__
+*.swp

@@ -4,9 +4,8 @@ import atexit
 import itertools
 import json
 import random
-import sys
-import termios
 from collections import defaultdict, OrderedDict
+import sys
 from time import sleep, time
 
 import aiohttp
@@ -14,6 +13,7 @@ import faust
 from pynput.keyboard import Key, Listener
 
 from server import KeyModel, ValueModel
+from utils.term import get_term_reader_protocol #, print, json
 
 
 fapp = faust.App('faust poc', broker='kafka://', store='memory://')
@@ -68,33 +68,19 @@ RATE = 1
 SENDER = http
 SENDERS = {"'h'": http, "'k'": kafka}
 EXIT = False
-def on_press(key):
+def on_key(key):
     global EXIT, RATE, SENDER
-    if key == Key.up:
+    if key == b'\x1b[A':
         RATE *= 10
         print(f"rate = {RATE}")
-    elif key == Key.down:
+    elif key == b'\x1b[B':
         RATE /= 10
         print(f"rate = {RATE}")
-    elif str(key) in SENDERS:
-        SENDER = SENDERS[str(key)]
-        print(f"changing to {SENDER.__name__}")
-    elif str(key) == "'q'":
+    elif key == b'q':
         print("exiting by request of user")
         EXIT = True
     else:
-        print(str(key))
-        
-
-def kb_echo(enable=True):
-    fd = sys.stdin.fileno()
-    new = termios.tcgetattr(fd)
-    if enable:
-        new[3] |= termios.ECHO
-    else:
-        new[3] &= ~termios.ECHO
-    termios.tcsetattr(fd, termios.TCSADRAIN, new)
-
+        print(key)
 
 
 async def main():
@@ -113,11 +99,12 @@ async def main():
     
 
 if __name__ == "__main__":
-    saved_tcattr = termios.tcgetattr(sys.stdin.fileno())
-    atexit.register(
-        termios.tcsetattr, sys.stdin.fileno(), termios.TCSADRAIN, saved_tcattr
-    )
-    kb_echo(False)
-    listener = Listener(on_press=on_press)
-    listener.start()
-    asyncio.run(main())
+    loop = asyncio.get_event_loop()
+    try:
+        pipe_transport = loop.connect_read_pipe(
+            get_term_reader_protocol(on_key), sys.stdin
+        )
+        loop.run_until_complete(pipe_transport)
+        loop.run_until_complete(main())
+    finally:
+        loop.close()
