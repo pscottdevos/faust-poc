@@ -4,37 +4,26 @@ import atexit
 import itertools
 import json
 import random
-from collections import defaultdict, OrderedDict
 import sys
-from time import sleep, time
+from collections import defaultdict, OrderedDict
+from time import time
 
 import aiohttp
 import faust
+import uvloop
 from pynput.keyboard import Key, Listener
 
 from server import KeyModel, ValueModel
-from utils.term import get_term_reader_protocol #, print, json
+from protocols.term import get_term_reader_protocol
+from utils.fastrnd import FastRnd
 
 
-fapp = faust.App('faust poc', broker='kafka://', store='memory://')
+asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
 
 
-class Rnd(object):
-    
-    R = 4.0
+app = faust.App('faust_poc_client', broker='kafka://', store='memory://')
 
-    def __init__(self, transform=lambda x: x, seed=None):
-        while not seed or 0 < seed >=1:
-            seed = time() % 1
-        self.seed = seed
-        self.transform = transform
-
-    def __call__(self):
-        self.seed = self.R * self.seed * (1.0 - self.seed)
-        return self.transform(self.seed)
-
-
-fpoc_topic = fapp.topic("fpoc",
+fpoc_topic = app.topic("fpoc-v2",
     key_type=KeyModel,
     key_serializer="json",
     value_type=ValueModel,
@@ -42,10 +31,10 @@ fpoc_topic = fapp.topic("fpoc",
 )
 
 
-url = "http://localhost:6066/values"
+url = "http://localhost:6066/sums"
 async def http(key, value, log=True):
     if log:
-        print(f"sending {(key, value)} via http")
+        print(f"sample http request from batch: {(key, value)}")
     async with aiohttp.ClientSession() as session:
         try:
             async with session.post(
@@ -60,13 +49,13 @@ async def http(key, value, log=True):
 
 async def kafka(key, value, log=True):
     if log:
-        print(f"sending {(key, value)} via kafka")
+        print(f"sample kafka message from batch: {(key, value)}")
     await fpoc_topic.send(key=KeyModel(i=key), value=ValueModel(**value))
 
 
 RATE = 1
 SENDER = http
-SENDERS = {"'h'": http, "'k'": kafka}
+SENDERS = {b'h': http, b'k': kafka}
 EXIT = False
 def on_key(key):
     global EXIT, RATE, SENDER
@@ -76,27 +65,39 @@ def on_key(key):
     elif key == b'\x1b[B':
         RATE /= 10
         print(f"rate = {RATE}")
-    elif key == b'q':
+    elif key in (b'q', b'\x03'):
         print("exiting by request of user")
         EXIT = True
+    elif key in (b'h', b'k'):
+        SENDER = SENDERS[key]
     else:
         print(key)
 
 
 async def main():
-    xrnd = Rnd(lambda x: int(10*x))
-    yrnd = Rnd(lambda y: 100 + int(10*y))
-    xcnt = defaultdict(int)
+    xrnd = FastRnd(lambda x: int(10*x))
+    yrnd = FastRnd(lambda y: 100 + int(10*y))
+    rcnt = defaultdict(int)
+    batch_start_time = time()
     for i, x, y in ( (i, xrnd(), yrnd()) for i in itertools.count() ):
         if EXIT:
             sys.exit()
-        log = not i % RATE
-        xcnt[x] += 1
-        await SENDER(i, {"x": x, "y": str(y)}, log)
-        await asyncio.sleep(1.0/RATE if RATE < 10000 else 0)
-        if log:
-            print(json.dumps(OrderedDict(sorted(xcnt.items())), indent=2))
-    
+        eob = not i % RATE # end of batch
+        rcnt[y] += 1
+        await SENDER(i, {"x": x, "y": str(y)}, eob)
+        if RATE < 10000:
+            await asyncio.sleep(1.0/RATE)
+        if eob:
+            current_time = time()
+            rps = round(RATE / (current_time - batch_start_time), 2)
+            print(f"requests per second {rps}")
+            log_str = json.dumps(
+                {"cumulative requests per key": OrderedDict(sorted(rcnt.items()))},
+                indent=2,
+            )
+            print(log_str)
+            print('=============================\n')
+            batch_start_time = current_time 
 
 if __name__ == "__main__":
     loop = asyncio.get_event_loop()

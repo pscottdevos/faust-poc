@@ -95,6 +95,8 @@ traitlets==5.1.1
     # via
     #   ipython
     #   matplotlib-inline
+uvloop==0.16.0
+    # via -r requirements.in
 venusian==1.2.0
     # via faust
 wcwidth==0.2.5

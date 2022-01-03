@@ -1,7 +1,7 @@
 import asyncio
 import atexit
 import sys
-from termios import *
+import termios as tm
 
 
 # Indexes for termios list.
@@ -13,17 +13,17 @@ ISPEED = 4
 OSPEED = 5
 CC = 6
 
-def setraw(fd, when=TCSAFLUSH):
+def setraw(fd, when=tm.TCSAFLUSH):
     """Put terminal into a raw mode."""
-    mode = tcgetattr(fd)
-    mode[IFLAG] = mode[IFLAG] & ~(BRKINT | ICRNL | INPCK | ISTRIP | IXON)
-    #mode[OFLAG] = mode[OFLAG] & ~(OPOST)
-    mode[CFLAG] = mode[CFLAG] & ~(CSIZE | PARENB)
-    mode[CFLAG] = mode[CFLAG] | CS8
-    mode[LFLAG] = mode[LFLAG] & ~(ECHO | ICANON | IEXTEN | ISIG)
-    mode[CC][VMIN] = 1
-    mode[CC][VTIME] = 0
-    tcsetattr(fd, when, mode)
+    mode = tm.tcgetattr(fd)
+    mode[IFLAG] = mode[IFLAG] & ~(tm.BRKINT | tm.ICRNL | tm.INPCK | tm.ISTRIP | tm.IXON)
+    #mode[OFLAG] = mode[OFLAG] & ~(tm.OPOST)
+    mode[CFLAG] = mode[CFLAG] & ~(tm.CSIZE | tm.PARENB)
+    mode[CFLAG] = mode[CFLAG] | tm.CS8
+    mode[LFLAG] = mode[LFLAG] & ~(tm.ECHO | tm.ICANON | tm.IEXTEN | tm.ISIG)
+    mode[CC][tm.VMIN] = 1
+    mode[CC][tm.VTIME] = 0
+    tm.tcsetattr(fd, when, mode)
 
 
 def get_term_reader_protocol(on_data_received=lambda d: d, set_echo_enabled=False):
@@ -37,13 +37,13 @@ def get_term_reader_protocol(on_data_received=lambda d: d, set_echo_enabled=Fals
         @staticmethod
         def configure(set_echo_enabled=False):
             fd = sys.stdin.fileno()
-            default_mode = tcgetattr(fd)
-            atexit.register(tcsetattr, fd, TCSADRAIN, default_mode)
-            mode = tcgetattr(fd)
+            default_mode = tm.tcgetattr(fd)
+            atexit.register(tm.tcsetattr, fd, tm.TCSADRAIN, default_mode)
+            mode = tm.tcgetattr(fd)
             if set_echo_enabled:
-                mode[LFLAG] |= ECHO
+                mode[LFLAG] |= tm.ECHO
             else:
-                mode[LFLAG] &= ~ECHO
+                mode[LFLAG] &= ~tm.ECHO
             setraw(fd)
 
         def connection_made(self, transport):
@@ -55,8 +55,6 @@ def get_term_reader_protocol(on_data_received=lambda d: d, set_echo_enabled=Fals
             super().connection_lost(exc)
 
         def data_received(self, data):
-            if data == b'\x03':
-                sys.exit()
             on_data_received(data)
             super().data_received(data)
 

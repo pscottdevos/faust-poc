@@ -1,2 +1,5 @@
+aiomonitor
 ipdb
 pip-tools
+pyyaml
+watchdog

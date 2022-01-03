@@ -1,4 +1,5 @@
 ipython
 pydot
 pynput
+uvloop
 -e git+https://github.com/pscottdevos/faust.git@1.10#egg=faust
